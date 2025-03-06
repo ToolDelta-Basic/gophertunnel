@@ -12,13 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-jose/go-jose/v3/jwt"
-	"github.com/google/uuid"
-	"github.com/sandertv/gophertunnel/minecraft/auth"
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
-	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
-	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
-	"golang.org/x/oauth2"
 	"log"
 	"math/rand"
 	"net"
@@ -26,6 +19,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-jose/go-jose/v3/jwt"
+	"github.com/google/uuid"
+	"github.com/sandertv/gophertunnel/minecraft/auth"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
+	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
+	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+	"golang.org/x/oauth2"
 )
 
 // Dialer allows specifying specific settings for connection to a Minecraft server.
@@ -228,7 +229,9 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 	_ = conn.Flush()
 
 	select {
-	case <-conn.close:
+	case <-ctx.Done():
+		return nil, conn.wrap(context.Cause(ctx), "dial")
+	case <-conn.ctx.Done():
 		return nil, conn.closeErr("dial")
 	case <-ctx.Done():
 		return nil, conn.wrap(ctx.Err(), "dial")
@@ -241,7 +244,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		_ = conn.Flush()
 
 		select {
-		case <-conn.close:
+		case <-conn.ctx.Done():
 			return nil, conn.closeErr("dial")
 		case <-ctx.Done():
 			return nil, conn.wrap(ctx.Err(), "dial")
