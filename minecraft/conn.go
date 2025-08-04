@@ -17,16 +17,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/internal"
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/nbt"
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/login"
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/packet"
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/resource"
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/text"
 	"github.com/go-jose/go-jose/v3"
 	"github.com/go-jose/go-jose/v3/jwt"
 	"github.com/google/uuid"
-	"github.com/sandertv/gophertunnel/minecraft/internal"
-	"github.com/sandertv/gophertunnel/minecraft/nbt"
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
-	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
-	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
-	"github.com/sandertv/gophertunnel/minecraft/resource"
-	"github.com/sandertv/gophertunnel/minecraft/text"
 )
 
 // exemptedResourcePack is a resource pack that is exempted from being downloaded. These packs may be directly

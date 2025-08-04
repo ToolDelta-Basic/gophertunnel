@@ -1,4 +1,4 @@
-module github.com/sandertv/gophertunnel
+module github.com/ToolDelta-Basic/gophertunnel
 
 go 1.22
 
