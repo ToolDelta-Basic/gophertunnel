@@ -20,10 +20,12 @@ import (
 	"time"
 
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/auth"
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/internal"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/login"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/packet"
-	"github.com/go-jose/go-jose/v3/jwt"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 )
@@ -269,12 +271,12 @@ func readChainIdentityData(chainData []byte) (login.IdentityData, error) {
 	claims := struct {
 		ExtraData login.IdentityData `json:"extraData"`
 	}{}
-	tok, err := jwt.ParseSigned(data)
+	tok, err := jwt.ParseSigned(data, []jose.SignatureAlgorithm{jose.ES384})
 	if err != nil {
 		return login.IdentityData{}, fmt.Errorf("read chain: parse jwt: %w", err)
 	}
 	if err := tok.UnsafeClaimsWithoutVerification(&claims); err != nil {
-		return login.IdentityData{}, fmt.Errorf("read chain: read claims: %w", err) 
+		return login.IdentityData{}, fmt.Errorf("read chain: read claims: %w", err)
 	}
 	if claims.ExtraData.Identity == "" {
 		return login.IdentityData{}, fmt.Errorf("read chain: no extra data found")

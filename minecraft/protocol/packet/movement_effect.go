@@ -1,8 +1,6 @@
 package packet
 
-import (
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
-)
+import "github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
 
 const (
 	MovementEffectTypeGlideBoost = iota

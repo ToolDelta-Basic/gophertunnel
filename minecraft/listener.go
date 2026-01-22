@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"slices"
@@ -14,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/internal"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/packet"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/resource"

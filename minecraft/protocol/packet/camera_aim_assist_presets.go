@@ -1,8 +1,6 @@
 package packet
 
-import (
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
-)
+import "github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
 
 // CameraAimAssistPresets is sent by the server to the client to provide a list of categories and presets
 // that can be used when sending a CameraAimAssist packet or a CameraInstruction including aim assist.

@@ -1,8 +1,6 @@
 package packet
 
-import (
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
-)
+import "github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
 
 // SetMovementAuthority is sent by the server to the client to change its movement mode.
 type SetMovementAuthority struct {
