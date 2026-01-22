@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -51,12 +51,11 @@ var exemptedPacks = []exemptedResourcePack{
 type Conn struct {
 	// once is used to ensure the Conn is closed only a single time. It protects the channel below from being
 	// closed multiple times.
-	once       sync.Once
-	ctx        context.Context
-	cancelFunc context.CancelCauseFunc
+	once  sync.Once
+	close chan struct{}
 
 	conn        net.Conn
-	log         *log.Logger
+	log         *slog.Logger
 	authEnabled bool
 
 	proto         Protocol
@@ -139,6 +138,8 @@ type Conn struct {
 	// to this connection will call this function.
 	packetFunc func(header packet.Header, payload []byte, src, dst net.Addr)
 
+	disconnectMessage atomic.Pointer[string]
+
 	shieldID atomic.Int32
 
 	additional chan packet.Packet
@@ -148,27 +149,24 @@ type Conn struct {
 // Minecraft packets to that net.Conn.
 // newConn accepts a private key which will be used to identify the connection. If a nil key is passed, the
 // key is generated.
-func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger, proto Protocol, flushRate time.Duration, limits bool) *Conn {
+func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *slog.Logger, proto Protocol, flushRate time.Duration, limits bool) *Conn {
 	conn := &Conn{
 		enc:          packet.NewEncoder(netConn),
 		dec:          packet.NewDecoder(netConn),
 		salt:         make([]byte, 16),
 		packets:      make(chan *packetData, 8),
 		additional:   make(chan packet.Packet, 16),
+		close:        make(chan struct{}),
 		spawn:        make(chan struct{}),
 		conn:         netConn,
 		privateKey:   key,
-		log:          log,
+		log:          log.With("raddr", netConn.RemoteAddr().String()),
 		hdr:          &packet.Header{},
 		proto:        proto,
 		readerLimits: limits,
 	}
-
-	if c, ok := netConn.(interface{ Context() context.Context }); ok {
-		conn.ctx, conn.cancelFunc = context.WithCancelCause(c.Context())
-	} else {
-		conn.ctx, conn.cancelFunc = context.WithCancelCause(context.Background())
-	}
+	var s string
+	conn.disconnectMessage.Store(&s)
 
 	if !limits {
 		// Disable the batch packet limit so that the server can send packets as often as it wants to.
@@ -186,7 +184,7 @@ func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger, proto Pro
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := conn.Flush(); err != nil {
-				_ = conn.close(err)
+				_ = conn.Close()
 				return
 			}
 		}
@@ -267,7 +265,7 @@ func (conn *Conn) StartGameContext(ctx context.Context, data GameData) error {
 	conn.startGame()
 
 	select {
-	case <-conn.ctx.Done():
+	case <-conn.close:
 		return conn.closeErr("start game")
 	case <-ctx.Done():
 		return conn.wrap(ctx.Err(), "start game")
@@ -307,7 +305,7 @@ func (conn *Conn) DoSpawnTimeout(timeout time.Duration) error {
 // sent earlier by the server.
 func (conn *Conn) DoSpawnContext(ctx context.Context) error {
 	select {
-	case <-conn.ctx.Done():
+	case <-conn.close:
 		return conn.closeErr("do spawn")
 	case <-ctx.Done():
 		return conn.wrap(ctx.Err(), "do spawn")
@@ -321,7 +319,7 @@ func (conn *Conn) DoSpawnContext(ctx context.Context) error {
 // next 20th of a second, after which the data is flushed and sent over the connection.
 func (conn *Conn) WritePacket(pk packet.Packet) error {
 	select {
-	case <-conn.ctx.Done():
+	case <-conn.close:
 		return conn.closeErr("write packet")
 	default:
 	}
@@ -363,7 +361,7 @@ func (conn *Conn) ReadPacket() (pk packet.Packet, err error) {
 	if data, ok := conn.takeDeferredPacket(); ok {
 		pk, err := data.decode(conn)
 		if err != nil {
-			conn.log.Println(err)
+			conn.log.Error("read packet: " + err.Error())
 			return conn.ReadPacket()
 		}
 		if len(pk) == 0 {
@@ -376,14 +374,14 @@ func (conn *Conn) ReadPacket() (pk packet.Packet, err error) {
 	}
 
 	select {
-	case <-conn.ctx.Done():
+	case <-conn.close:
 		return nil, conn.closeErr("read packet")
 	case <-conn.readDeadline:
 		return nil, conn.wrap(context.DeadlineExceeded, "read packet")
 	case data := <-conn.packets:
 		pk, err := data.decode(conn)
 		if err != nil {
-			conn.log.Println(err)
+			conn.log.Error("read packet: " + err.Error())
 			return conn.ReadPacket()
 		}
 		if len(pk) == 0 {
@@ -420,7 +418,7 @@ func (conn *Conn) ReadBytes() ([]byte, error) {
 		return data.full, nil
 	}
 	select {
-	case <-conn.ctx.Done():
+	case <-conn.close:
 		return nil, conn.closeErr("read")
 	case <-conn.readDeadline:
 		return nil, conn.wrap(context.DeadlineExceeded, "read")
@@ -440,7 +438,7 @@ func (conn *Conn) Read(b []byte) (n int, err error) {
 		return copy(b, data.full), nil
 	}
 	select {
-	case <-conn.ctx.Done():
+	case <-conn.close:
 		return 0, conn.closeErr("read")
 	case <-conn.readDeadline:
 		return 0, conn.wrap(context.DeadlineExceeded, "read")
@@ -456,7 +454,7 @@ func (conn *Conn) Read(b []byte) (n int, err error) {
 // are directly sent.
 func (conn *Conn) Flush() error {
 	select {
-	case <-conn.ctx.Done():
+	case <-conn.close:
 		return conn.closeErr("flush")
 	default:
 	}
@@ -483,7 +481,13 @@ func (conn *Conn) Flush() error {
 // Close closes the Conn and its underlying connection. Before closing, it also calls Flush() so that any
 // packets currently pending are sent out.
 func (conn *Conn) Close() error {
-	return conn.close(net.ErrClosed)
+	var err error
+	conn.once.Do(func() {
+		err = conn.Flush()
+		close(conn.close)
+		_ = conn.conn.Close()
+	})
+	return err
 }
 
 // LocalAddr returns the local address of the underlying connection.
@@ -546,12 +550,6 @@ func (conn *Conn) ChunkRadius() int {
 	return int(conn.gameData.ChunkRadius)
 }
 
-// Context returns the connection's context. The context is canceled when the connection is closed,
-// allowing for cancellation of operations that are tied to the lifecycle of the connection.
-func (conn *Conn) Context() context.Context {
-	return conn.ctx
-}
-
 // takeDeferredPacket locks the deferred packets lock and takes the next packet from the list of deferred
 // packets. If none was found, it returns false, and if one was found, the data and true is returned.
 func (conn *Conn) takeDeferredPacket() (*packetData, bool) {
@@ -590,12 +588,13 @@ func (conn *Conn) receive(data []byte) error {
 		if err != nil {
 			return err
 		}
-		_ = conn.close(conn.closeErr(pks[0].(*packet.Disconnect).Message))
+		conn.disconnectMessage.Store(&pks[0].(*packet.Disconnect).Message)
+		_ = conn.Close()
 		return nil
 	}
 	if conn.loggedIn && !conn.waitingForSpawn.Load() {
 		select {
-		case <-conn.ctx.Done():
+		case <-conn.close:
 		case previous := <-conn.packets:
 			// There was already a packet in this channel, so take it out and defer it so that it is read
 			// next.
@@ -603,7 +602,7 @@ func (conn *Conn) receive(data []byte) error {
 		default:
 		}
 		select {
-		case <-conn.ctx.Done():
+		case <-conn.close:
 		case conn.packets <- pkData:
 		}
 		return nil
@@ -776,6 +775,19 @@ func (conn *Conn) handleClientToServerHandshake() error {
 				URL:         pack.DownloadURL(),
 			})
 		}
+
+		// If it has behaviours, add it to the behaviour pack list. If not, we add it to the texture packs
+		// list.
+		if pack.HasBehaviours() {
+			behaviourPack := protocol.BehaviourPackInfo{UUID: pack.UUID(), Version: pack.Version(), Size: uint64(pack.Len())}
+			if pack.HasScripts() {
+				// One of the resource packs has scripts, so we set HasScripts in the packet to true.
+				pk.HasScripts = true
+				behaviourPack.HasScripts = true
+			}
+			pk.BehaviourPacks = append(pk.BehaviourPacks, behaviourPack)
+			continue
+		}
 		texturePack := protocol.TexturePackInfo{UUID: pack.UUID(), Version: pack.Version(), Size: uint64(pack.Len())}
 		if pack.Encrypted() {
 			texturePack.ContentKey = pack.ContentKey()
@@ -849,7 +861,7 @@ func (conn *Conn) handleClientCacheStatus(pk *packet.ClientCacheStatus) error {
 func (conn *Conn) handleResourcePacksInfo(pk *packet.ResourcePacksInfo) error {
 	// First create a new resource pack queue with the information in the packet so we can download them
 	// properly later.
-	totalPacks := len(pk.TexturePacks)
+	totalPacks := len(pk.TexturePacks) + len(pk.BehaviourPacks)
 	conn.packQueue = &resourcePackQueue{
 		packAmount:       totalPacks,
 		downloadingPacks: make(map[string]downloadingPack),
@@ -859,7 +871,30 @@ func (conn *Conn) handleResourcePacksInfo(pk *packet.ResourcePacksInfo) error {
 
 	for index, pack := range pk.TexturePacks {
 		if _, ok := conn.packQueue.downloadingPacks[pack.UUID]; ok {
-			conn.log.Printf("handle ResourcePacksInfo: duplicate texture pack (UUID=%v)\n", pack.UUID)
+			conn.log.Warn("handle ResourcePacksInfo: duplicate texture pack", "UUID", pack.UUID)
+			conn.packQueue.packAmount--
+			continue
+		}
+		if conn.downloadResourcePack != nil && !conn.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version, index, totalPacks) {
+			conn.ignoredResourcePacks = append(conn.ignoredResourcePacks, exemptedResourcePack{
+				uuid:    pack.UUID,
+				version: pack.Version,
+			})
+			conn.packQueue.packAmount--
+			continue
+		}
+		// This UUID_Version is a hack Mojang put in place.
+		packsToDownload = append(packsToDownload, pack.UUID+"_"+pack.Version)
+		conn.packQueue.downloadingPacks[pack.UUID] = downloadingPack{
+			size:       pack.Size,
+			buf:        bytes.NewBuffer(make([]byte, 0, pack.Size)),
+			newFrag:    make(chan []byte),
+			contentKey: pack.ContentKey,
+		}
+	}
+	for index, pack := range pk.BehaviourPacks {
+		if _, ok := conn.packQueue.downloadingPacks[pack.UUID]; ok {
+			conn.log.Warn("handle ResourcePacksInfo: duplicate behaviour pack", "UUID", pack.UUID)
 			conn.packQueue.packAmount--
 			continue
 		}
@@ -903,9 +938,9 @@ func (conn *Conn) handleResourcePackStack(pk *packet.ResourcePackStack) error {
 	for _, pack := range pk.TexturePacks {
 		for i, behaviourPack := range pk.BehaviourPacks {
 			if pack.UUID == behaviourPack.UUID {
-				// We had a behaviour pack with the same UUID as the texture pack, so we drop the texture
+				// We had a behaviour pack with the same UUID as the texture pack, so we drop the behaviour
 				// pack and log it.
-				conn.log.Printf("handle ResourcePackStack: dropping behaviour pack (UUID=%v) due to a texture pack with the same UUID\n", pack.UUID)
+				conn.log.Warn("handle ResourcePackStack: dropping behaviour pack due to a texture pack with the same UUID", "UUID", pack.UUID)
 				pk.BehaviourPacks = append(pk.BehaviourPacks[:i], pk.BehaviourPacks[i+1:]...)
 			}
 		}
@@ -959,7 +994,7 @@ func (conn *Conn) handleResourcePackClientResponse(pk *packet.ResourcePackClient
 	case packet.PackResponseRefused:
 		// Even though this response is never sent, we handle it appropriately in case it is changed to work
 		// correctly again.
-		return conn.close(conn.closeErr("resource pack refused"))
+		return conn.Close()
 	case packet.PackResponseSendPacks:
 		packs := pk.PacksToDownload
 		conn.packQueue = &resourcePackQueue{packs: conn.resourcePacks}
@@ -1072,12 +1107,12 @@ func (conn *Conn) handleResourcePackDataInfo(pk *packet.ResourcePackDataInfo) er
 	if !ok {
 		// We either already downloaded the pack or we got sent an invalid UUID, that did not match any pack
 		// sent in the ResourcePacksInfo packet.
-		return fmt.Errorf("unknown pack (UUID=%v)", id)
+		return fmt.Errorf("handle ResourcePackDataInfo: unknown pack (UUID=%v)", id)
 	}
 	if pack.size != pk.Size {
 		// Size mismatch: The ResourcePacksInfo packet had a size for the pack that did not match with the
 		// size sent here.
-		conn.log.Printf("pack (UUID=%v) had a different size in ResourcePacksInfo than in ResourcePackDataInfo\n", id)
+		conn.log.Warn("handle ResourcePackDataInfo: pack had a different size in ResourcePacksInfo than in ResourcePackDataInfo", "UUID", id)
 		pack.size = pk.Size
 	}
 
@@ -1102,7 +1137,7 @@ func (conn *Conn) handleResourcePackDataInfo(pk *packet.ResourcePackDataInfo) er
 				ChunkIndex: i,
 			})
 			select {
-			case <-conn.ctx.Done():
+			case <-conn.close:
 				return
 			case frag := <-pack.newFrag:
 				// Write the fragment to the full buffer of the downloading resource pack.
@@ -1113,13 +1148,13 @@ func (conn *Conn) handleResourcePackDataInfo(pk *packet.ResourcePackDataInfo) er
 		defer conn.packMu.Unlock()
 
 		if pack.buf.Len() != int(pack.size) {
-			conn.log.Printf("incorrect resource pack size (UUID=%v): expected %v, got %v\n", id, pack.size, pack.buf.Len())
+			conn.log.Error(fmt.Sprintf("download resource pack: incorrect resource pack size: expected %v, got %v", pack.size, pack.buf.Len()), "UUID", id)
 			return
 		}
 		// First parse the resource pack from the total byte buffer we obtained.
 		newPack, err := resource.Read(pack.buf)
 		if err != nil {
-			conn.log.Printf("invalid full resource pack data (UUID=%v): %v\n", id, err)
+			conn.log.Error("download resource pack: invalid full resource pack data: "+err.Error(), "UUID", id)
 			return
 		}
 		conn.packQueue.packAmount--
@@ -1318,10 +1353,10 @@ func (conn *Conn) handlePlayStatus(pk *packet.PlayStatus) error {
 		conn.expect(packet.IDResourcePacksInfo)
 		return conn.Flush()
 	case packet.PlayStatusLoginFailedClient:
-		_ = conn.close(conn.closeErr("client outdated"))
+		_ = conn.Close()
 		return fmt.Errorf("client outdated")
 	case packet.PlayStatusLoginFailedServer:
-		_ = conn.close(conn.closeErr("server outdated"))
+		_ = conn.Close()
 		return fmt.Errorf("server outdated")
 	case packet.PlayStatusPlayerSpawn:
 		// We've spawned and can send the last packet in the spawn sequence.
@@ -1329,22 +1364,22 @@ func (conn *Conn) handlePlayStatus(pk *packet.PlayStatus) error {
 		conn.tryFinaliseClientConn()
 		return nil
 	case packet.PlayStatusLoginFailedInvalidTenant:
-		_ = conn.close(conn.closeErr("invalid edu edition game owner"))
+		_ = conn.Close()
 		return fmt.Errorf("invalid edu edition game owner")
 	case packet.PlayStatusLoginFailedVanillaEdu:
-		_ = conn.close(conn.closeErr("cannot join an edu edition game on vanilla"))
+		_ = conn.Close()
 		return fmt.Errorf("cannot join an edu edition game on vanilla")
 	case packet.PlayStatusLoginFailedEduVanilla:
-		_ = conn.close(conn.closeErr("cannot join a vanilla game on edu edition"))
+		_ = conn.Close()
 		return fmt.Errorf("cannot join a vanilla game on edu edition")
 	case packet.PlayStatusLoginFailedServerFull:
-		_ = conn.close(conn.closeErr("server full"))
+		_ = conn.Close()
 		return fmt.Errorf("server full")
 	case packet.PlayStatusLoginFailedEditorVanilla:
-		_ = conn.close(conn.closeErr("cannot join a vanilla game on editor"))
+		_ = conn.Close()
 		return fmt.Errorf("cannot join a vanilla game on editor")
 	case packet.PlayStatusLoginFailedVanillaEditor:
-		_ = conn.close(conn.closeErr("cannot join an editor game on vanilla"))
+		_ = conn.Close()
 		return fmt.Errorf("cannot join an editor game on vanilla")
 	default:
 		return fmt.Errorf("unknown play status %v", pk.Status)
@@ -1402,23 +1437,11 @@ func (conn *Conn) expect(packetIDs ...uint32) {
 	conn.expectedIDs.Store(packetIDs)
 }
 
-func (conn *Conn) close(cause error) error {
-	var err error
-	conn.once.Do(func() {
-		err = conn.Flush()
-		conn.cancelFunc(cause)
-		_ = conn.conn.Close()
-	})
-	return err
-}
-
 // closeErr returns an adequate connection closed error for the op passed. If the connection was closed
 // through a Disconnect packet, the message is contained.
 func (conn *Conn) closeErr(op string) error {
-	select {
-	case <-conn.ctx.Done():
-		return conn.wrap(context.Cause(conn.ctx), op)
-	default:
-		return conn.wrap(errClosed, op)
+	if msg := *conn.disconnectMessage.Load(); msg != "" {
+		return conn.wrap(DisconnectError(msg), op)
 	}
+	return conn.wrap(net.ErrClosed, op)
 }
