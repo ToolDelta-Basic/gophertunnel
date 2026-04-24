@@ -1,6 +1,8 @@
 package packet
 
-import "github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+import (
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+)
 
 // CurrentStructureFeature is sent by the server to let the client know the name of the structure feature
 // that the player is currently occupying.

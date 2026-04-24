@@ -189,6 +189,30 @@ func (r *Reader) RGBA(x *color.RGBA) {
 	}
 }
 
+// ARGB reads a color.ARGB x from a int32.
+func (r *Reader) ARGB(x *color.RGBA) {
+	var v int32
+	r.Int32(&v)
+	*x = color.RGBA{
+		A: byte(v),
+		R: byte(v >> 8),
+		G: byte(v >> 16),
+		B: byte(v >> 24),
+	}
+}
+
+// BEARGB reads a color.ARGB x from a big endian int32.
+func (r *Reader) BEARGB(x *color.RGBA) {
+	var v int32
+	r.BEInt32(&v)
+	*x = color.RGBA{
+		A: byte(v),
+		R: byte(v >> 8),
+		G: byte(v >> 16),
+		B: byte(v >> 24),
+	}
+}
+
 // VarRGBA reads a color.RGBA x from a varuint32.
 func (r *Reader) VarRGBA(x *color.RGBA) {
 	var v uint32
@@ -535,59 +559,6 @@ func (r *Reader) AbilityValue(x *any) {
 		*x = floatVal
 	default:
 		r.InvalidValue(valType, "ability value type", "must be bool or float32")
-	}
-}
-
-// CompressedBiomeDefinitions reads a list of compressed biome definitions from the reader. Minecraft decided to make their
-// own type of compression for this, so we have to implement it ourselves. It uses a dictionary of repeated byte sequences
-// to reduce the size of the data. The compressed data is read byte-by-byte, and if the byte is 0xff then it is assumed
-// that the next two bytes are an int16 for the dictionary index. Otherwise, the byte is copied to the output. The dictionary
-// index is then used to look up the byte sequence to be appended to the output.
-func (r *Reader) CompressedBiomeDefinitions(x *map[string]any) {
-	var length uint32
-	header := make([]byte, 10)
-	r.Varuint32(&length)
-	if _, err := r.r.Read(header); err != nil {
-		r.panic(err)
-	}
-	if !bytes.Equal(header, []byte("COMPRESSED")) {
-		r.InvalidValue(header, "compression header", fmt.Sprintf("must be COMPRESSED (%v)", []byte("COMPRESSED")))
-		return
-	}
-
-	var dictLength uint16
-	var entryLength uint8
-	r.Uint16(&dictLength)
-	dictionary := make([][]byte, dictLength)
-	for i := 0; i < int(dictLength); i++ {
-		r.Uint8(&entryLength)
-		dictionary[i] = make([]byte, int(entryLength))
-		if _, err := r.r.Read(dictionary[i]); err != nil {
-			r.panic(err)
-		}
-	}
-
-	var decompressed []byte
-	var dictIndex int16
-	for {
-		key, err := r.r.ReadByte()
-		if err != nil {
-			break
-		}
-		if key != 0xff {
-			decompressed = append(decompressed, key)
-			continue
-		}
-
-		r.Int16(&dictIndex)
-		if dictIndex >= 0 && int(dictIndex) < len(dictionary) {
-			decompressed = append(decompressed, dictionary[dictIndex]...)
-			continue
-		}
-		decompressed = append(decompressed, key)
-	}
-	if err := nbt.Unmarshal(decompressed, x); err != nil {
-		r.panic(err)
 	}
 }
 

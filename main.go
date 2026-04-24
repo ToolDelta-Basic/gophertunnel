@@ -2,14 +2,13 @@ package main
 
 import (
 	"errors"
+	"github.com/pelletier/go-toml"
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft"
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/auth"
+	"golang.org/x/oauth2"
 	"log"
 	"os"
 	"sync"
-
-	"github.com/ToolDelta-Basic/gophertunnel/minecraft"
-	"github.com/ToolDelta-Basic/gophertunnel/minecraft/auth"
-	"github.com/pelletier/go-toml"
-	"golang.org/x/oauth2"
 )
 
 // The following program implements a proxy that forwards players from one local address to a remote address.

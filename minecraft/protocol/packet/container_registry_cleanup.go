@@ -1,6 +1,8 @@
 package packet
 
-import "github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+import (
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+)
 
 // ContainerRegistryCleanup is sent by the server to trigger a client-side cleanup of the dynamic container
 // registry.

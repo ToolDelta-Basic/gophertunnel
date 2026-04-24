@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"slices"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/internal"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/login"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/packet"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/resource"
 )
@@ -70,18 +72,23 @@ type ListenConfig struct {
 	// Use Listener.AddResourcePack() to add a resource pack and Listener.RemoveResourcePack() to remove a resource pack
 	// after having called ListenConfig.Listen(). Note that these methods will not update resource packs for active connections.
 	ResourcePacks []*resource.Pack
-	// Biomes contains information about all biomes that the server has registered, which the client can use
-	// to render the world more effectively. If these are nil, the default biome definitions will be used.
-	Biomes map[string]any
 	// TexturePacksRequired specifies if clients that join must accept the texture pack in order for them to
 	// be able to join the server. If they don't accept, they can only leave the server.
 	TexturePacksRequired bool
+	// FetchResourcePacks determines which resource packs to send to a client based on its identity and client data.
+	// If set, it will be called before sending the ResourcePacksInfo packet. The returned resource packs
+	// will be forwarded to the client in place of the Listener's current ones.
+	FetchResourcePacks func(identityData login.IdentityData, clientData login.ClientData, current []*resource.Pack) []*resource.Pack
 
 	// PacketFunc is called whenever a packet is read from or written to a connection returned when using
 	// Listener.Accept. It includes packets that are otherwise covered in the connection sequence, such as the
 	// Login packet. The function is called with the header of the packet and its raw payload, the address
 	// from which the packet originated, and the destination address.
 	PacketFunc func(header packet.Header, payload []byte, src, dst net.Addr)
+
+	// MaxDecompressedLen is the maximum length of a decompressed packet to prevent potential exploits. If 0,
+	// the default value is 16MB (16 * 1024 * 1024). Setting this to a negative integer disables the limit.
+	MaxDecompressedLen int
 }
 
 // Listener implements a Minecraft listener on top of an unspecific net.Listener. It abstracts away the
@@ -121,6 +128,11 @@ func (cfg ListenConfig) Listen(network string, address string) (*Listener, error
 	if cfg.FlushRate == 0 {
 		cfg.FlushRate = time.Second / 20
 	}
+	if cfg.MaxDecompressedLen == 0 {
+		cfg.MaxDecompressedLen = 16 * 1024 * 1024 // 16MB
+	} else if cfg.MaxDecompressedLen < 0 {
+		cfg.MaxDecompressedLen = math.MaxInt
+	}
 
 	n, ok := networkByID(network, cfg.ErrorLog)
 	if !ok {
@@ -131,7 +143,10 @@ func (cfg ListenConfig) Listen(network string, address string) (*Listener, error
 	if err != nil {
 		return nil, err
 	}
-	key, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generating ECDSA key: %w", err)
+	}
 	listener := &Listener{
 		cfg:      cfg,
 		listener: netListener,
@@ -235,8 +250,8 @@ func (listener *Listener) listen() {
 		}
 	}()
 	defer func() {
-		close(listener.incoming)
 		close(listener.close)
+		close(listener.incoming)
 		_ = listener.Close()
 	}()
 	for {
@@ -260,12 +275,13 @@ func (listener *Listener) createConn(netConn net.Conn) {
 	conn := newConn(netConn, listener.key, listener.cfg.ErrorLog, proto{}, listener.cfg.FlushRate, true)
 	conn.acceptedProto = append(listener.cfg.AcceptedProtocols, proto{})
 	conn.compression = listener.cfg.Compression
+	conn.maxDecompressedLen = listener.cfg.MaxDecompressedLen
 	conn.pool = conn.proto.Packets(true)
 
 	conn.packetFunc = listener.cfg.PacketFunc
 	conn.texturePacksRequired = listener.cfg.TexturePacksRequired
 	conn.resourcePacks = packs
-	conn.biomes = listener.cfg.Biomes
+	conn.fetchResourcePacks = listener.cfg.FetchResourcePacks
 	conn.gameData.WorldName = listener.status().ServerName
 	conn.authEnabled = !listener.cfg.AuthenticationDisabled
 	conn.disconnectOnUnknownPacket = !listener.cfg.AllowUnknownPackets

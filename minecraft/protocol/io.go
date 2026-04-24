@@ -43,6 +43,8 @@ type IO interface {
 	UUID(x *uuid.UUID)
 	RGB(x *color.RGBA)
 	RGBA(x *color.RGBA)
+	ARGB(x *color.RGBA)
+	BEARGB(x *color.RGBA)
 	VarRGBA(x *color.RGBA)
 	EntityMetadata(x *map[uint32]any)
 	Item(x *ItemStack)
@@ -56,7 +58,6 @@ type IO interface {
 	PlayerInventoryAction(x *UseItemTransactionData)
 	GameRule(x *GameRule)
 	AbilityValue(x *any)
-	CompressedBiomeDefinitions(x *map[string]any)
 	Bitset(x *Bitset, size int)
 
 	ShieldID() int32

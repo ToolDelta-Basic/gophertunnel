@@ -143,6 +143,18 @@ func (w *Writer) RGBA(x *color.RGBA) {
 	w.Uint32(&val)
 }
 
+// ARGB writes a color.RGBA x as a int32 to the underlying buffer.
+func (w *Writer) ARGB(x *color.RGBA) {
+	val := int32(x.A) | int32(x.R)<<8 | int32(x.G)<<16 | int32(x.B)<<24
+	w.Int32(&val)
+}
+
+// BEARGB writes a color.RGBA x as a big endian int32 to the underlying buffer.
+func (w *Writer) BEARGB(x *color.RGBA) {
+	val := int32(x.A) | int32(x.R)<<8 | int32(x.G)<<16 | int32(x.B)<<24
+	w.BEInt32(&val)
+}
+
 // VarRGBA writes a color.RGBA x as a varuint32 to the underlying buffer.
 func (w *Writer) VarRGBA(x *color.RGBA) {
 	val := uint32(x.R) | uint32(x.G)<<8 | uint32(x.B)<<16 | uint32(x.A)<<24
@@ -436,41 +448,6 @@ func (w *Writer) AbilityValue(x *any) {
 	default:
 		w.InvalidValue(*x, "ability value type", "must be bool or float32")
 	}
-}
-
-// CompressedBiomeDefinitions reads a list of compressed biome definitions from the reader. Minecraft decided to make their
-// own type of compression for this, so we have to implement it ourselves. It uses a dictionary of repeated byte sequences
-// to reduce the size of the data. The compressed data is read byte-by-byte, and if the byte is 0xff then it is assumed
-// that the next two bytes are an int16 for the dictionary index. Otherwise, the byte is copied to the output. The dictionary
-// index is then used to look up the byte sequence to be appended to the output.
-func (w *Writer) CompressedBiomeDefinitions(x *map[string]any) {
-	decompressed, err := nbt.Marshal(x)
-	if err != nil {
-		w.panicf("error marshaling nbt: %v", err)
-	}
-
-	var compressed []byte
-	buf := bytes.NewBuffer(compressed)
-	bufWriter := NewWriter(buf, w.shieldID)
-
-	header := []byte("COMPRESSED")
-	bufWriter.Bytes(&header)
-
-	// TODO: Dictionary compression implementation
-	var dictionaryLength uint16
-	bufWriter.Uint16(&dictionaryLength)
-	for _, b := range decompressed {
-		bufWriter.Uint8(&b)
-		if b == 0xff {
-			dictionaryIndex := int16(1)
-			bufWriter.Int16(&dictionaryIndex)
-		}
-	}
-
-	compressed = buf.Bytes()
-	length := uint32(len(compressed))
-	w.Varuint32(&length)
-	w.Bytes(&compressed)
 }
 
 var varintMaxByteValue = big.NewInt(0x80)

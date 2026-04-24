@@ -13,20 +13,21 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/rand"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/google/uuid"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/auth"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/internal"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/login"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/packet"
-	"github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 )
 
@@ -52,6 +53,10 @@ type Dialer struct {
 	// device auth to login.
 	// If TokenSource is nil, the connection will not use authentication.
 	TokenSource oauth2.TokenSource
+
+	// XBLToken should be used in place of TokenSource if the XBL token is already known, i.e through a different
+	// oauth source. This token is for with the https://multiplayer.minecraft.net relaying party.
+	XBLToken *auth.XBLToken
 
 	// PacketFunc is called whenever a packet is read from or written to the connection returned when using
 	// Dialer.Dial(). It includes packets that are otherwise covered in the connection sequence, such as the
@@ -99,6 +104,11 @@ type Dialer struct {
 	// the client when an XUID is present without logging in.
 	// For getting this to work with BDS, authentication should be disabled.
 	KeepXBLIdentityData bool
+
+	// EnableLegacyAuth, if set to true, will use the legacy authentication behavior
+	// (pre-1.21.90) when connecting to the server. This should only be used for outdated
+	// servers, as enabling it will cause compatibility issues with updated servers.
+	EnableLegacyAuth bool
 }
 
 // Dial dials a Minecraft connection to the address passed over the network passed. The network is typically
@@ -161,10 +171,17 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		d.FlushRate = time.Second / 20
 	}
 
-	key, _ := ecdsa.GenerateKey(elliptic.P384(), cryptorand.Reader)
+	key, err := ecdsa.GenerateKey(elliptic.P384(), cryptorand.Reader)
+	if err != nil {
+		return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: fmt.Errorf("generating ECDSA key: %w", err)}
+	}
 	var chainData string
-	if d.TokenSource != nil {
-		chainData, err = authChain(ctx, d.TokenSource, key)
+	if d.TokenSource != nil || d.XBLToken != nil {
+		xblToken, err := getXBLToken(ctx, d)
+		if err != nil {
+			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
+		}
+		chainData, err = authChain(ctx, xblToken, key)
 		if err != nil {
 			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
 		}
@@ -200,6 +217,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 	conn.cacheEnabled = d.EnableClientCache
 	conn.disconnectOnInvalidPacket = d.DisconnectOnInvalidPackets
 	conn.disconnectOnUnknownPacket = d.DisconnectOnUnknownPackets
+	conn.maxDecompressedLen = math.MaxInt
 
 	defaultIdentityData(&conn.identityData)
 	defaultClientData(address, conn.identityData.DisplayName, &conn.clientData)
@@ -212,13 +230,13 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		if !d.KeepXBLIdentityData {
 			clearXBLIdentityData(&conn.identityData)
 		}
-		request = login.EncodeOffline(conn.identityData, conn.clientData, key)
+		request = login.EncodeOffline(conn.identityData, conn.clientData, key, d.EnableLegacyAuth)
 	} else {
 		// We login as an Android device and this will show up in the 'titleId' field in the JWT chain, which
 		// we can't edit. We just enforce Android data for logging in.
 		setAndroidData(&conn.clientData)
 
-		request = login.Encode(chainData, conn.clientData, key)
+		request = login.Encode(chainData, conn.clientData, key, d.EnableLegacyAuth)
 		identityData, _, _, _ := login.Parse(request)
 		// If we got the identity data from Minecraft auth, we need to make sure we set it in the Conn too, as
 		// we are not aware of the identity data ourselves yet.
@@ -330,21 +348,28 @@ func listenConn(conn *Conn, readyForLogin, connected chan struct{}, cancel conte
 	}
 }
 
-// authChain requests the Minecraft auth JWT chain using the credentials passed. If successful, an encoded
-// chain ready to be put in a login request is returned.
-func authChain(ctx context.Context, src oauth2.TokenSource, key *ecdsa.PrivateKey) (string, error) {
-	// Obtain the Live token, and using that the XSTS token.
-	liveToken, err := src.Token()
-	if err != nil {
-		return "", fmt.Errorf("request Live Connect token: %w", err)
-	}
-	xsts, err := auth.RequestXBLToken(ctx, liveToken, "https://multiplayer.minecraft.net/")
-	if err != nil {
-		return "", fmt.Errorf("request XBOX Live token: %w", err)
+func getXBLToken(ctx context.Context, dialer Dialer) (*auth.XBLToken, error) {
+	if dialer.XBLToken != nil {
+		return dialer.XBLToken, nil
 	}
 
+	liveToken, err := dialer.TokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("request Live Connect token: %w", err)
+	}
+	xblToken, err := auth.RequestXBLToken(ctx, liveToken, "https://multiplayer.minecraft.net/")
+	if err != nil {
+		return nil, fmt.Errorf("request XBOX Live token: %w", err)
+	}
+	return xblToken, nil
+}
+
+// authChain requests the Minecraft auth JWT chain using the credentials passed. If successful, an encoded
+// chain ready to be put in a login request is returned.
+func authChain(ctx context.Context, xblToken *auth.XBLToken, key *ecdsa.PrivateKey) (string, error) {
+
 	// Obtain the raw chain data using the
-	chain, err := auth.RequestMinecraftChain(ctx, xsts, key)
+	chain, err := auth.RequestMinecraftChain(ctx, xblToken, key)
 	if err != nil {
 		return "", fmt.Errorf("request Minecraft auth chain: %w", err)
 	}
@@ -363,6 +388,12 @@ func defaultClientData(address, username string, d *login.ClientData) {
 	d.ThirdPartyName = username
 	if d.DeviceOS == 0 {
 		d.DeviceOS = protocol.DeviceAndroid
+	}
+	if d.DefaultInputMode == 0 {
+		d.DefaultInputMode = packet.InputModeTouch
+	}
+	if d.CurrentInputMode == 0 {
+		d.CurrentInputMode = packet.InputModeTouch
 	}
 	if d.GameVersion == "" {
 		d.GameVersion = protocol.CurrentVersion
