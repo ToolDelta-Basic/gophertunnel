@@ -3,15 +3,16 @@ package protocol
 import (
 	"bytes"
 	"fmt"
-	"github.com/go-gl/mathgl/mgl32"
-	"github.com/google/uuid"
-	"github.com/ToolDelta-Basic/gophertunnel/minecraft/nbt"
 	"image/color"
 	"io"
 	"math/big"
 	"reflect"
 	"sort"
 	"unsafe"
+
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/nbt"
+	"github.com/go-gl/mathgl/mgl32"
+	"github.com/google/uuid"
 )
 
 // Writer implements writing methods for data types from Minecraft packets. Each Packet implementation has one
@@ -179,7 +180,7 @@ func (w *Writer) PlayerInventoryAction(x *UseItemTransactionData) {
 	Slice(w, &x.Actions)
 	w.Varuint32(&x.ActionType)
 	w.Varuint32(&x.TriggerType)
-	w.BlockPos(&x.BlockPosition)
+	w.UBlockPos(&x.BlockPosition)
 	w.Varint32(&x.BlockFace)
 	w.Varint32(&x.HotBarSlot)
 	w.ItemInstance(&x.HeldItem)
@@ -191,6 +192,29 @@ func (w *Writer) PlayerInventoryAction(x *UseItemTransactionData) {
 
 // GameRule writes a GameRule x to the Writer.
 func (w *Writer) GameRule(x *GameRule) {
+	w.String(&x.Name)
+	w.Bool(&x.CanBeModifiedByPlayer)
+
+	switch v := x.Value.(type) {
+	case bool:
+		id := uint32(1)
+		w.Varuint32(&id)
+		w.Bool(&v)
+	case uint32:
+		id := uint32(2)
+		w.Varuint32(&id)
+		w.Uint32(&v)
+	case float32:
+		id := uint32(3)
+		w.Varuint32(&id)
+		w.Float32(&v)
+	default:
+		w.UnknownEnumOption(fmt.Sprintf("%T", v), "game rule type")
+	}
+}
+
+// GameRuleLegacy writes a legacy GameRule x to the Writer.
+func (w *Writer) GameRuleLegacy(x *GameRule) {
 	w.String(&x.Name)
 	w.Bool(&x.CanBeModifiedByPlayer)
 
@@ -452,6 +476,7 @@ func (w *Writer) AbilityValue(x *any) {
 
 var varintMaxByteValue = big.NewInt(0x80)
 
+// Bitset writes a Bitset x to the underlying buffer.
 func (w *Writer) Bitset(x *Bitset, size int) {
 	if x.size != size {
 		w.panicf("bitset size mismatch: expected %v, got %v", size, x.size)
@@ -469,6 +494,38 @@ func (w *Writer) Bitset(x *Bitset, size int) {
 		u.Rsh(u, 7)
 	}
 	_ = w.w.WriteByte(byte(u.Bits()[0]))
+}
+
+// PackSetting writes a PackSetting x to the underlying buffer.
+func (w *Writer) PackSetting(x *PackSetting) {
+	w.String(&x.Name)
+	var id uint32
+	switch val := x.Value.(type) {
+	case float32:
+		id = PackSettingTypeFloat
+		w.Varuint32(&id)
+		w.Float32(&val)
+	case bool:
+		id = PackSettingTypeBool
+		w.Varuint32(&id)
+		w.Bool(&val)
+	case string:
+		id = PackSettingTypeString
+		w.Varuint32(&id)
+		w.String(&val)
+	default:
+		w.UnknownEnumOption(x.Value, "pack setting")
+	}
+}
+
+// ShapeData writes a ShapeData to the writer.
+func (w *Writer) ShapeData(x *ShapeData) {
+	var shapeDataType uint32
+	if !lookupShapeDataType(*x, &shapeDataType) {
+		w.UnknownEnumOption(fmt.Sprintf("%T", *x), "debug shape data type")
+	}
+	w.Varuint32(&shapeDataType)
+	(*x).Marshal(w)
 }
 
 // Varint64 writes an int64 as 1-10 bytes to the underlying buffer.

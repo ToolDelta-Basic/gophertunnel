@@ -1,9 +1,10 @@
 package minecraft
 
 import (
+	"io"
+
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/packet"
-	"io"
 )
 
 // Protocol represents the Minecraft protocol used to communicate over network. It comprises a unique set of packets

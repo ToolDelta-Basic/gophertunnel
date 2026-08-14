@@ -1,8 +1,8 @@
 package packet
 
 import (
-	"github.com/google/uuid"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/google/uuid"
 )
 
 // PlayerSkin is sent by the client to the server when it updates its own skin using the in-game skin picker.

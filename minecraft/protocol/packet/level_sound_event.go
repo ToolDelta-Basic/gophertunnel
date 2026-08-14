@@ -1,8 +1,8 @@
 package packet
 
 import (
-	"github.com/go-gl/mathgl/mgl32"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/go-gl/mathgl/mgl32"
 )
 
 // noinspection SpellCheckingInspection
@@ -568,7 +568,11 @@ const (
 	SoundEventLeadUnleash
 	SoundEventLeadBreak
 	SoundEventUnsaddle
+	SoundEventEquipCopper
 	SoundEventRecordLavaChicken
+	SoundEventPlaceItem
+	SoundEventSingleItemSwap
+	SoundEventMultiItemSwap
 )
 
 // LevelSoundEvent is sent by the server to make any kind of built-in sound heard to a player. It is sent to,

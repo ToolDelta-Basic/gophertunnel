@@ -1,8 +1,8 @@
 package packet
 
 import (
-	"github.com/go-gl/mathgl/mgl32"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/go-gl/mathgl/mgl32"
 )
 
 // SpawnParticleEffect is sent by the server to spawn a particle effect client-side. Unlike other packets that

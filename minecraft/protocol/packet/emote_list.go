@@ -1,8 +1,8 @@
 package packet
 
 import (
-	"github.com/google/uuid"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/google/uuid"
 )
 
 // EmoteList is sent by the client every time it joins the server and when it equips new emotes. It may be

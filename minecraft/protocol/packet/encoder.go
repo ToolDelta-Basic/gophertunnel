@@ -5,8 +5,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"fmt"
-	"github.com/ToolDelta-Basic/gophertunnel/minecraft/internal"
 	"io"
+
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/internal"
 )
 
 // Encoder handles the encoding of Minecraft packets that are sent to an io.Writer. The packets are compressed

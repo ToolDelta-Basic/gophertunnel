@@ -1,8 +1,8 @@
 package packet
 
 import (
-	"github.com/go-gl/mathgl/mgl32"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/go-gl/mathgl/mgl32"
 )
 
 const (
@@ -31,7 +31,7 @@ type ChangeDimension struct {
 	// LoadingScreenID is a unique ID for the loading screen that the player is currently in. The client will
 	// update the server on its state through the ServerBoundLoadingScreen packet, and it can be used to not
 	// send specific packets to the client if it is changing dimensions. This field should be unique for every
-	//ChangeDimension packet sent.
+	// ChangeDimension packet sent.
 	LoadingScreenID protocol.Optional[uint32]
 }
 

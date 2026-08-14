@@ -3,6 +3,7 @@ package minecraft
 import (
 	"bytes"
 	"fmt"
+
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/packet"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/resource"
 )

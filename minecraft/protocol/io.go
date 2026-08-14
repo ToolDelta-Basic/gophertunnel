@@ -1,10 +1,11 @@
 package protocol
 
 import (
+	"image/color"
+
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/nbt"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/google/uuid"
-	"github.com/ToolDelta-Basic/gophertunnel/minecraft/nbt"
-	"image/color"
 )
 
 // IO represents a packet IO direction. Implementations of this interface are Reader and Writer. Reader reads
@@ -57,8 +58,11 @@ type IO interface {
 	TransactionDataType(x *InventoryTransactionData)
 	PlayerInventoryAction(x *UseItemTransactionData)
 	GameRule(x *GameRule)
+	GameRuleLegacy(x *GameRule)
 	AbilityValue(x *any)
 	Bitset(x *Bitset, size int)
+	PackSetting(x *PackSetting)
+	ShapeData(x *ShapeData)
 
 	ShieldID() int32
 	UnknownEnumOption(value any, enum string)

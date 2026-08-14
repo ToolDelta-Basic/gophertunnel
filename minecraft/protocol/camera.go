@@ -51,6 +51,11 @@ const (
 	EasingTypeInOutElastic
 )
 
+const (
+	SplineEaseTypeCatmullRom = iota
+	SplineEaseTypeLinear
+)
+
 // CameraEase represents an easing function that can be used by a CameraInstructionSet.
 type CameraEase struct {
 	// Type is the type of easing function used. This is one of the constants above.
@@ -146,6 +151,26 @@ type CameraInstructionTarget struct {
 func (x *CameraInstructionTarget) Marshal(r IO) {
 	OptionalFunc(r, &x.CenterOffset, r.Vec3)
 	r.Int64(&x.EntityUniqueID)
+}
+
+// CameraInstructionFieldOfView represents a camera instruction that updates the field of view.
+type CameraInstructionFieldOfView struct {
+	// FieldOfView is the field of view of the camera.
+	FieldOfView float32
+	// EaseTime is the time in seconds that the easing function should take.
+	EaseTime float32
+	// EaseType is the type of easing function used. This is one of the constants above.
+	EaseType uint8
+	// Clear can be set to true to clear the current instruction.
+	Clear bool
+}
+
+// Marshal encodes/decodes a CameraInstructionFieldOfView.
+func (x *CameraInstructionFieldOfView) Marshal(r IO) {
+	r.Float32(&x.FieldOfView)
+	r.Float32(&x.EaseTime)
+	r.Uint8(&x.EaseType)
+	r.Bool(&x.Clear)
 }
 
 // CameraPreset represents a basic preset that can be extended upon by more complex instructions.
@@ -351,4 +376,41 @@ type CameraAimAssistItemSettings struct {
 func (x *CameraAimAssistItemSettings) Marshal(r IO) {
 	r.String(&x.Item)
 	r.String(&x.Category)
+}
+
+// CameraRotationOption represents a rotation option for camera spline instructions.
+type CameraRotationOption struct {
+	// Value is the rotation value.
+	Value mgl32.Vec3
+	// Time is the time for this rotation option.
+	Time float32
+}
+
+// Marshal encodes/decodes a CameraRotationOption.
+func (x *CameraRotationOption) Marshal(r IO) {
+	r.Vec3(&x.Value)
+	r.Float32(&x.Time)
+}
+
+// CameraSplineInstruction represents a camera instruction that creates a spline path for the camera to follow.
+type CameraSplineInstruction struct {
+	// TotalTime is the total time for the spline animation.
+	TotalTime float32
+	// EaseType is the type of easing function used. This is one of the constants above.
+	EaseType uint8
+	// Curve is a list of points that define the spline curve.
+	Curve []mgl32.Vec3
+	// ProgressKeyFrames is a list of key frames for the progress of the spline.
+	ProgressKeyFrames []mgl32.Vec2
+	// RotationOptions is a list of rotation options for the spline.
+	RotationOptions []CameraRotationOption
+}
+
+// Marshal encodes/decodes a CameraSplineInstruction.
+func (x *CameraSplineInstruction) Marshal(r IO) {
+	r.Float32(&x.TotalTime)
+	r.Uint8(&x.EaseType)
+	FuncSlice(r, &x.Curve, r.Vec3)
+	FuncSlice(r, &x.ProgressKeyFrames, r.Vec2)
+	Slice(r, &x.RotationOptions)
 }

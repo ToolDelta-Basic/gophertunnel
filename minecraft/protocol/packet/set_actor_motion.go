@@ -1,8 +1,8 @@
 package packet
 
 import (
-	"github.com/go-gl/mathgl/mgl32"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/go-gl/mathgl/mgl32"
 )
 
 // SetActorMotion is sent by the server to change the client-side velocity of an entity. It is usually used

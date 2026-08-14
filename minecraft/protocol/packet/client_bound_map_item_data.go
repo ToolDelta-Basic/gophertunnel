@@ -1,8 +1,9 @@
 package packet
 
 import (
-	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
 	"image/color"
+
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
 )
 
 const (

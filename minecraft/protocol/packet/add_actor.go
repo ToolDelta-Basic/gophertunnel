@@ -1,8 +1,8 @@
 package packet
 
 import (
-	"github.com/go-gl/mathgl/mgl32"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/go-gl/mathgl/mgl32"
 )
 
 // AddActor is sent by the server to the client to spawn an entity to the player. It is used for every entity

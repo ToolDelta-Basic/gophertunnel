@@ -1,8 +1,8 @@
 package packet
 
 import (
-	"github.com/go-gl/mathgl/mgl32"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/go-gl/mathgl/mgl32"
 )
 
 const PlayerAuthInputBitsetSize = 65
@@ -79,19 +79,18 @@ const (
 	InputModeMouse = iota + 1
 	InputModeTouch
 	InputModeGamePad
-	InputModeMotionController
 )
 
 const (
 	PlayModeNormal = iota
 	PlayModeTeaser
 	PlayModeScreen
-	PlayModeViewer
-	PlayModeReality
-	PlayModePlacement
-	PlayModeLivingRoom
+	_
+	_
+	_
+	_
 	PlayModeExitLevel
-	PlayModeExitLevelLivingRoom
+	_
 	PlayModeNumModes
 )
 

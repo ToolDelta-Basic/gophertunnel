@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/packet"
 )
 

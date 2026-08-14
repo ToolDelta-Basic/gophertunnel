@@ -18,15 +18,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/google/uuid"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/internal"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/login"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol/packet"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/resource"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/text"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/google/uuid"
 )
 
 // exemptedResourcePack is a resource pack that is exempted from being downloaded. These packs may be directly
@@ -39,6 +39,30 @@ type exemptedResourcePack struct {
 // exemptedPacks is a list of all resource packs that do not need to be downloaded, but may always be applied
 // in the ResourcePackStack packet.
 var exemptedPacks = []exemptedResourcePack{
+	{
+		uuid:    "b41c2785-c512-4a49-af56-3a87afd47c57",
+		version: "1.21.30",
+	},
+	{
+		uuid:    "a4df0cb3-17be-4163-88d7-fcf7002b935d",
+		version: "1.21.20",
+	},
+	{
+		uuid:    "d19adffe-a2e1-4b02-8436-ca4583368c89",
+		version: "1.21.10",
+	},
+	{
+		uuid:    "85d5603d-2824-4b21-8044-34f441f4fce1",
+		version: "1.21.0",
+	},
+	{
+		uuid:    "e977cd13-0a11-4618-96fb-03dfe9c43608",
+		version: "1.20.60",
+	},
+	{
+		uuid:    "0674721c-a0aa-41a1-9ba8-1ed33ea3e7ed",
+		version: "1.20.50",
+	},
 	{
 		uuid:    "0fba4063-dba1-4281-9b89-ff9390653530",
 		version: "1.0.0",
@@ -1277,7 +1301,7 @@ func (conn *Conn) handleRequestChunkRadius(pk *packet.RequestChunkRadius) error 
 	conn.gameData.ChunkRadius = pk.ChunkRadius
 	// Clients pre-1.21.80 crash when not sending all biomes, due to achievements assuming all biomes are present.
 	// To maintain backwards compatibility, we send empty biomes so the protocol can handle legacy biome data
-	// for older clients (see: https://github.com/ToolDelta-Basic/gophertunnel/blob/a61732e9cb7bc04e5e7dd961ad4fea597f1229dc/minecraft/conn.go#L1274-L1278).
+	// for older clients (see: https://github.com/Sandertv/gophertunnel/blob/a61732e9cb7bc04e5e7dd961ad4fea597f1229dc/minecraft/conn.go#L1274-L1278).
 	_ = conn.WritePacket(&packet.BiomeDefinitionList{})
 	_ = conn.WritePacket(&packet.PlayStatus{Status: packet.PlayStatusPlayerSpawn})
 	_ = conn.WritePacket(&packet.CreativeContent{})

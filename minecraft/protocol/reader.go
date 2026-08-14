@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/go-gl/mathgl/mgl32"
-	"github.com/google/uuid"
-	"github.com/ToolDelta-Basic/gophertunnel/minecraft/nbt"
 	"image/color"
 	"io"
 	"math"
 	"math/big"
 	"math/bits"
 	"unsafe"
+
+	"github.com/ToolDelta-Basic/gophertunnel/minecraft/nbt"
+	"github.com/go-gl/mathgl/mgl32"
+	"github.com/google/uuid"
 )
 
 // Reader implements reading operations for reading types from Minecraft packets. Each Packet implementation
@@ -278,7 +279,7 @@ func (r *Reader) PlayerInventoryAction(x *UseItemTransactionData) {
 	Slice(r, &x.Actions)
 	r.Varuint32(&x.ActionType)
 	r.Varuint32(&x.TriggerType)
-	r.BlockPos(&x.BlockPosition)
+	r.UBlockPos(&x.BlockPosition)
 	r.Varint32(&x.BlockFace)
 	r.Varint32(&x.HotBarSlot)
 	r.ItemInstance(&x.HeldItem)
@@ -290,6 +291,31 @@ func (r *Reader) PlayerInventoryAction(x *UseItemTransactionData) {
 
 // GameRule reads a GameRule x from the Reader.
 func (r *Reader) GameRule(x *GameRule) {
+	r.String(&x.Name)
+	r.Bool(&x.CanBeModifiedByPlayer)
+	var t uint32
+	r.Varuint32(&t)
+
+	switch t {
+	case 1:
+		var v bool
+		r.Bool(&v)
+		x.Value = v
+	case 2:
+		var v uint32
+		r.Uint32(&v)
+		x.Value = v
+	case 3:
+		var v float32
+		r.Float32(&v)
+		x.Value = v
+	default:
+		r.UnknownEnumOption(t, "game rule type")
+	}
+}
+
+// GameRuleLegacy reads a legacy GameRule x from the Reader.
+func (r *Reader) GameRuleLegacy(x *GameRule) {
 	r.String(&x.Name)
 	r.Bool(&x.CanBeModifiedByPlayer)
 	var t uint32
@@ -562,6 +588,7 @@ func (r *Reader) AbilityValue(x *any) {
 	}
 }
 
+// Bitset reads a Bitset from the reader.
 func (r *Reader) Bitset(x *Bitset, size int) {
 	*x = NewBitset(size)
 	for i := 0; i < size; i += 7 {
@@ -580,6 +607,40 @@ func (r *Reader) Bitset(x *Bitset, size int) {
 	}
 
 	r.panic(errBitsetOverflow)
+}
+
+// PackSetting reads a PackSetting from the reader.
+func (r *Reader) PackSetting(x *PackSetting) {
+	r.String(&x.Name)
+	var t uint32
+	r.Varuint32(&t)
+	switch t {
+	case PackSettingTypeFloat:
+		var v float32
+		r.Float32(&v)
+		x.Value = v
+	case PackSettingTypeBool:
+		var v bool
+		r.Bool(&v)
+		x.Value = v
+	case PackSettingTypeString:
+		var v string
+		r.String(&v)
+		x.Value = v
+	default:
+		r.UnknownEnumOption(t, "pack setting")
+	}
+}
+
+// ShapeData reads a ShapeData's type from the reader.
+func (r *Reader) ShapeData(x *ShapeData) {
+	var shapeDataType uint32
+	r.Varuint32(&shapeDataType)
+	if !lookupShapeData(shapeDataType, x) {
+		r.UnknownEnumOption(shapeDataType, "debug shape data type")
+		return
+	}
+	(*x).Marshal(r)
 }
 
 // SliceLimit checks if the value passed is lower than the limit passed. If

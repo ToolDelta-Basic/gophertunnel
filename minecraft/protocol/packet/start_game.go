@@ -1,10 +1,10 @@
 package packet
 
 import (
-	"github.com/go-gl/mathgl/mgl32"
-	"github.com/google/uuid"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/nbt"
 	"github.com/ToolDelta-Basic/gophertunnel/minecraft/protocol"
+	"github.com/go-gl/mathgl/mgl32"
+	"github.com/google/uuid"
 )
 
 const (
@@ -191,7 +191,7 @@ type StartGame struct {
 	EducationSharedResourceURI protocol.EducationSharedResourceURI
 	// ForceExperimentalGameplay specifies if experimental gameplay should be force enabled. For servers this
 	// should always be set to false.
-	ForceExperimentalGameplay protocol.Optional[bool]
+	ForceExperimentalGameplay bool
 	// LevelID is a base64 encoded world ID that is used to identify the world.
 	LevelID string
 	// WorldName is the name of the world that the player is joining. Note that this field shows up above the
@@ -251,6 +251,8 @@ type StartGame struct {
 	// its index in the expected block palette. This is useful for servers that wish to support multiple protocol versions
 	// and custom blocks, but it will result in extra bytes being written for every block in a sub chunk palette.
 	UseBlockNetworkIDHashes bool
+	// TickDeathSystemsEnabled specifies if the new tick death systems are enabled.
+	TickDeathSystemsEnabled bool
 	// ServerAuthoritativeSound is currently unknown as to what it does.
 	ServerAuthoritativeSound bool
 }
@@ -293,7 +295,7 @@ func (pk *StartGame) Marshal(io protocol.IO) {
 	io.Varint32(&pk.PlatformBroadcastMode)
 	io.Bool(&pk.CommandsEnabled)
 	io.Bool(&pk.TexturePackRequired)
-	protocol.FuncSlice(io, &pk.GameRules, io.GameRule)
+	protocol.FuncSlice(io, &pk.GameRules, io.GameRuleLegacy)
 	protocol.SliceUint32Length(io, &pk.Experiments)
 	io.Bool(&pk.ExperimentsPreviouslyToggled)
 	io.Bool(&pk.BonusChestEnabled)
@@ -315,7 +317,7 @@ func (pk *StartGame) Marshal(io protocol.IO) {
 	io.Int32(&pk.LimitedWorldDepth)
 	io.Bool(&pk.NewNether)
 	protocol.Single(io, &pk.EducationSharedResourceURI)
-	protocol.OptionalFunc(io, &pk.ForceExperimentalGameplay, io.Bool)
+	io.Bool(&pk.ForceExperimentalGameplay)
 	io.Uint8(&pk.ChatRestrictionLevel)
 	io.Bool(&pk.DisablePlayerInteractions)
 	io.String(&pk.ServerID)
@@ -338,5 +340,6 @@ func (pk *StartGame) Marshal(io protocol.IO) {
 	io.UUID(&pk.WorldTemplateID)
 	io.Bool(&pk.ClientSideGeneration)
 	io.Bool(&pk.UseBlockNetworkIDHashes)
+	io.Bool(&pk.TickDeathSystemsEnabled)
 	io.Bool(&pk.ServerAuthoritativeSound)
 }
